@@ -7,7 +7,6 @@ import ErrorState from './components/states/ErrorState';
 import LoadingState from './components/states/LoadingState';
 import UnitToggle from './components/UnitToggle';
 import { useWeather } from './hooks/useWeather';
-import { mockWeatherData } from './mocks/weatherData';
 import type { Unit } from './types/weather';
 
 /**
@@ -39,23 +38,10 @@ export default function App() {
 
       <main className="mx-auto max-w-5xl space-y-8 px-4 py-8">
         {status === 'idle' && (
-          <>
-            <EmptyState
-              title="Busque uma cidade para começar"
-              hint="Ex.: Seattle, Lisboa, São Paulo…"
-            />
-            <section aria-label="Prévia de exemplo" className="space-y-4">
-              <p className="text-center text-xs font-medium uppercase tracking-wide text-white/70">
-                Prévia com dados de demonstração
-              </p>
-              <CurrentWeather
-                city={mockWeatherData.city}
-                current={mockWeatherData.current}
-                unit={unit}
-              />
-              <ForecastList forecast={mockWeatherData.forecast} unit={unit} />
-            </section>
-          </>
+          <EmptyState
+            title="Busque uma cidade para começar"
+            hint="Ex.: Seattle, Lisboa, São Paulo…"
+          />
         )}
 
         {status === 'loading' && <LoadingState />}

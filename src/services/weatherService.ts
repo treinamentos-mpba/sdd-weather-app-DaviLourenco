@@ -20,9 +20,9 @@ async function fetchWithTimeout(url: string): Promise<Response> {
     return await fetch(url, { signal: controller.signal });
   } catch (err) {
     if (err instanceof DOMException && err.name === 'AbortError') {
-      throw new WeatherServiceError('A requisição demorou demais. Tente novamente.');
+      throw new WeatherServiceError('A requisição demorou demais.');
     }
-    throw new WeatherServiceError('Falha de rede. Verifique sua conexão.');
+    throw new WeatherServiceError('Falha de rede.');
   } finally {
     clearTimeout(timeout);
   }
