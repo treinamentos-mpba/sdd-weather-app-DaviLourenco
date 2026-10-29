@@ -35,11 +35,41 @@ const forecast = {
   },
 };
 
-async function mockApis(page: Page) {
-  await page.route('**/geocoding-api.open-meteo.com/**', (route) =>
-    route.fulfill({ json: geocoding }),
-  );
-  await page.route('**/api.open-meteo.com/**', (route) => route.fulfill({ json: forecast }));
+interface MockApiOptions {
+  geocodingResponse?: typeof geocoding | Record<string, never>;
+  expectedSearchName?: string;
+  onForecastRequest?: () => void;
+}
+
+async function mockApis(page: Page, options: MockApiOptions = {}) {
+  const geocodingResponse = options.geocodingResponse ?? geocoding;
+  const expectedSearchName = options.expectedSearchName ?? 'Seattle';
+
+  await page.route('**/geocoding-api.open-meteo.com/**', async (route) => {
+    const request = route.request();
+    const url = new URL(request.url());
+
+    expect(request.method()).toBe('GET');
+    expect(url.pathname).toBe('/v1/search');
+    expect(url.searchParams.get('name')).toBe(expectedSearchName);
+    expect(url.searchParams.get('count')).toBe('5');
+    await route.fulfill({ json: geocodingResponse });
+  });
+
+  await page.route('**/api.open-meteo.com/**', async (route) => {
+    const request = route.request();
+    const url = new URL(request.url());
+
+    options.onForecastRequest?.();
+    expect(request.method()).toBe('GET');
+    expect(url.pathname).toBe('/v1/forecast');
+    expect(url.searchParams.get('forecast_days')).toBe('5');
+    expect(url.searchParams.get('timezone')).toBe('auto');
+    expect(url.searchParams.get('current')?.split(',')).toContain('temperature_2m');
+    expect(url.searchParams.get('current')?.split(',')).not.toContain('time');
+    expect(url.searchParams.get('daily')?.split(',')).toContain('temperature_2m_min');
+    await route.fulfill({ json: forecast });
+  });
 }
 
 test('fluxo completo: buscar → clima atual → previsão → trocar unidade', async ({ page }) => {
@@ -53,17 +83,21 @@ test('fluxo completo: buscar → clima atual → previsão → trocar unidade', 
   await expect(page.getByRole('region', { name: /previsão de 5 dias/i })).toBeVisible();
 
   // 0°C exibido; após trocar para °F deve virar 32°.
-  await expect(page.getByText('0°').first()).toBeVisible();
+  await expect(page.getByRole('status', { name: 'Temperatura atual: 0° Celsius' })).toBeVisible();
   await page.getByRole('button', { name: '°F' }).click();
-  await expect(page.getByText('32°').first()).toBeVisible();
+  await expect(
+    page.getByRole('status', { name: 'Temperatura atual: 32° Fahrenheit' }),
+  ).toBeVisible();
 });
 
 test('estado vazio quando a cidade não existe', async ({ page }) => {
-  await page.route('**/geocoding-api.open-meteo.com/**', (route) => route.fulfill({ json: {} }));
   let forecastRequests = 0;
-  await page.route('**/api.open-meteo.com/**', (route) => {
-    forecastRequests += 1;
-    return route.fulfill({ json: forecast });
+  await mockApis(page, {
+    geocodingResponse: {},
+    expectedSearchName: 'xyzxyz',
+    onForecastRequest: () => {
+      forecastRequests += 1;
+    },
   });
   await page.goto('/');
 
