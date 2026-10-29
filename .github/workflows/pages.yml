@@ -2,7 +2,7 @@ name: Deploy to GitHub Pages
 
 on:
   workflow_run:
-    workflows: ["SDD Guard"]
+    workflows: ["CI"]
     types: [completed]
     branches: [main]
   workflow_dispatch:
