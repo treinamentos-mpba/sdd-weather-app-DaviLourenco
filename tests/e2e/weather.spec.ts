@@ -60,22 +60,37 @@ test('fluxo completo: buscar → clima atual → previsão → trocar unidade', 
 
 test('estado vazio quando a cidade não existe', async ({ page }) => {
   await page.route('**/geocoding-api.open-meteo.com/**', (route) => route.fulfill({ json: {} }));
+  let forecastRequests = 0;
+  await page.route('**/api.open-meteo.com/**', (route) => {
+    forecastRequests += 1;
+    return route.fulfill({ json: forecast });
+  });
   await page.goto('/');
 
   await page.getByLabel(/buscar cidade/i).fill('xyzxyz');
   await page.getByRole('button', { name: /buscar/i }).click();
 
-  await expect(page.getByText(/nenhuma cidade encontrada/i)).toBeVisible();
+  await expect(
+    page.getByRole('heading', { name: 'Nenhuma cidade encontrada para "xyzxyz"' }),
+  ).toBeVisible();
+  expect(forecastRequests).toBe(0);
 });
 
-test('viewport mobile renderiza o fluxo principal', async ({ page }) => {
+test('viewport mobile 375x812 renderiza o clima e os cinco dias', async ({ page }) => {
   await mockApis(page);
   await page.setViewportSize({ width: 375, height: 812 });
   await page.goto('/');
 
   await page.getByLabel(/buscar cidade/i).fill('Seattle');
   await page.getByRole('button', { name: /buscar/i }).click();
+
   await expect(page.getByRole('heading', { name: 'Seattle' })).toBeVisible();
+  await expect(page.getByRole('region', { name: 'Clima atual' })).toContainText('Nublado');
+  await expect(page.getByRole('status', { name: 'Temperatura atual: 0° Celsius' })).toBeVisible();
+
+  const forecastRegion = page.getByRole('region', { name: 'Previsão de 5 dias' });
+  await expect(forecastRegion).toBeVisible();
+  await expect(forecastRegion.getByRole('listitem')).toHaveCount(5);
 });
 
 test('layout não cria overflow horizontal de 320px a desktop', async ({ page }) => {

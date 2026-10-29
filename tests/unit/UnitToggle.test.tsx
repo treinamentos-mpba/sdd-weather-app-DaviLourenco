@@ -39,11 +39,15 @@ function Harness() {
 describe('UnitToggle + CurrentWeather', () => {
   it('converte a temperatura ao alternar a unidade', async () => {
     render(<Harness />);
-    expect(screen.getByText('0°')).toBeInTheDocument();
+    expect(screen.getByRole('status', { name: 'Temperatura atual: 0° Celsius' })).toHaveTextContent(
+      '0°',
+    );
     expect(screen.getByText('1015 hPa')).toBeInTheDocument();
 
     await userEvent.click(screen.getByRole('button', { name: '°F' }));
-    expect(screen.getByText('32°')).toBeInTheDocument();
+    expect(
+      screen.getByRole('status', { name: 'Temperatura atual: 32° Fahrenheit' }),
+    ).toHaveTextContent('32°');
   });
 
   it('expõe os botões com estado pressionado acessível', () => {
