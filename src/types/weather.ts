@@ -8,40 +8,66 @@
 
 export type Unit = 'celsius' | 'fahrenheit';
 
-/** Resultado da API de geocoding (uma cidade). */
+export type RequestStatus = 'idle' | 'loading' | 'success' | 'error' | 'empty';
+
+export type WeatherErrorKind = 'network' | 'timeout' | 'http' | 'invalid-response';
+
+/** Localização selecionada para a consulta meteorológica. */
 export interface City {
   id: number;
   name: string;
-  country: string;
-  /** Estado/região, quando disponível (ajuda a desambiguar homônimos). */
-  admin1?: string;
+  admin1: string | null;
+  country: string | null;
   latitude: number;
   longitude: number;
 }
 
-/** Condições atuais. Temperatura sempre em °C. */
+/** Condições atuais normalizadas; temperaturas são mantidas em Celsius. */
 export interface CurrentWeather {
-  temperature: number;
+  observedAt: string;
+  temperatureC: number;
   weatherCode: number;
-  humidity: number;
-  windSpeed: number;
-  pressure: number;
-  precipitation: number;
-  time: string;
+  apparentTemperatureC: number | null;
+  humidityPercent: number | null;
+  windKmh: number | null;
+  precipitationMm: number | null;
+  surfacePressureHpa: number | null;
 }
 
-/** Um dia da previsão. Temperaturas sempre em °C. */
-export interface ForecastDay {
-  date: string;
-  min: number;
-  max: number;
-  weatherCode: number;
-  precipitationProbability: number;
+/** Um dia válido ou indisponível da previsão, em horário local da cidade. */
+export type ForecastDay =
+  | {
+      status: 'available';
+      date: string;
+      weatherCode: number;
+      minTemperatureC: number;
+      maxTemperatureC: number;
+      precipitationProbabilityPercent: number | null;
+      maxWindKmh: number | null;
+    }
+  | {
+      status: 'unavailable';
+      date: string;
+    };
+
+export interface WeatherError {
+  kind: WeatherErrorKind;
+  message: string;
+  retryable: boolean;
 }
 
-/** Agregado entregue à UI: cidade + clima atual + 5 dias de previsão. */
 export interface WeatherData {
   city: City;
-  current: CurrentWeather;
+  timezone: string;
+  current: CurrentWeather | null;
   forecast: ForecastDay[];
+  errors: {
+    current?: WeatherError;
+    forecast?: WeatherError;
+  };
+}
+
+export interface Preferences {
+  lastCity: City | null;
+  unit: Unit;
 }

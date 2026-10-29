@@ -1,5 +1,6 @@
 import { render, screen } from '@testing-library/react';
-import { describe, it, expect } from 'vitest';
+import userEvent from '@testing-library/user-event';
+import { describe, expect, it } from 'vitest';
 import App from '../../src/App';
 
 describe('App', () => {
@@ -13,5 +14,16 @@ describe('App', () => {
     render(<App />);
     expect(screen.getByLabelText(/buscar cidade/i)).toBeInTheDocument();
     expect(screen.getByRole('group', { name: /unidade de temperatura/i })).toBeInTheDocument();
+  });
+
+  it('renderiza a prévia mockada e deriva a temperatura na unidade selecionada', async () => {
+    render(<App />);
+
+    expect(screen.getByRole('region', { name: 'Prévia de exemplo' })).toBeInTheDocument();
+    expect(screen.getByText('24°')).toBeInTheDocument();
+
+    await userEvent.click(screen.getByRole('button', { name: '°F' }));
+
+    expect(screen.getByText('75°')).toBeInTheDocument();
   });
 });

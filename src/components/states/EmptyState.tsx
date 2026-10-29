@@ -1,6 +1,6 @@
 interface EmptyStateProps {
   title: string;
-  hint?: string;
+  hint: string;
 }
 
 /** Estado vazio (nenhuma busca feita ou nenhum resultado). */
@@ -10,8 +10,8 @@ export default function EmptyState({ title, hint }: EmptyStateProps) {
       <span aria-hidden="true" className="text-4xl">
         🌍
       </span>
-      <p className="text-white/80">{title}</p>
-      {hint && <p className="text-sm text-white/50">{hint}</p>}
+      <h2 className="text-lg font-semibold text-white/90">{title}</h2>
+      <p className="text-sm text-white/60">{hint}</p>
     </div>
   );
 }

@@ -57,52 +57,72 @@ export async function searchCities(name: string): Promise<City[]> {
   return data.results.map((r) => ({
     id: r.id,
     name: r.name,
-    country: r.country ?? '',
-    admin1: r.admin1,
+    country: r.country ?? null,
+    admin1: r.admin1 ?? null,
     latitude: r.latitude,
     longitude: r.longitude,
   }));
 }
 
 interface ForecastResponse {
+  timezone?: string;
   current?: {
     time: string;
     temperature_2m: number;
-    relative_humidity_2m: number;
-    wind_speed_10m: number;
-    surface_pressure: number;
-    precipitation: number;
     weather_code: number;
+    apparent_temperature?: number | null;
+    relative_humidity_2m?: number | null;
+    wind_speed_10m?: number | null;
+    precipitation?: number | null;
+    surface_pressure?: number | null;
   };
   daily?: {
     time: string[];
     weather_code: number[];
     temperature_2m_max: number[];
     temperature_2m_min: number[];
-    precipitation_probability_max: (number | null)[];
+    precipitation_probability_max?: (number | null)[];
+    wind_speed_10m_max?: number[];
   };
 }
 
 function mapCurrent(c: NonNullable<ForecastResponse['current']>): CurrentWeather {
   return {
-    time: c.time,
-    temperature: c.temperature_2m,
-    humidity: c.relative_humidity_2m,
-    windSpeed: c.wind_speed_10m,
-    pressure: c.surface_pressure,
-    precipitation: c.precipitation,
+    observedAt: c.time,
+    temperatureC: c.temperature_2m,
     weatherCode: c.weather_code,
+    apparentTemperatureC: c.apparent_temperature ?? null,
+    humidityPercent: c.relative_humidity_2m ?? null,
+    windKmh: c.wind_speed_10m ?? null,
+    precipitationMm: c.precipitation ?? null,
+    surfacePressureHpa: c.surface_pressure ?? null,
   };
 }
 
 function mapForecast(d: NonNullable<ForecastResponse['daily']>): ForecastDay[] {
-  return d.time.map((date, i) => ({
-    date,
-    weatherCode: d.weather_code[i],
-    max: d.temperature_2m_max[i],
-    min: d.temperature_2m_min[i],
-    precipitationProbability: d.precipitation_probability_max[i] ?? 0,
-  }));
+  return d.time.map((date, i) => {
+    const weatherCode = d.weather_code[i];
+    const maxTemperatureC = d.temperature_2m_max[i];
+    const minTemperatureC = d.temperature_2m_min[i];
+
+    if (
+      weatherCode === undefined ||
+      maxTemperatureC === undefined ||
+      minTemperatureC === undefined
+    ) {
+      return { status: 'unavailable', date };
+    }
+
+    return {
+      status: 'available',
+      date,
+      weatherCode,
+      maxTemperatureC,
+      minTemperatureC,
+      precipitationProbabilityPercent: d.precipitation_probability_max?.[i] ?? null,
+      maxWindKmh: d.wind_speed_10m_max?.[i] ?? null,
+    };
+  });
 }
 
 /**
@@ -114,9 +134,9 @@ export async function getWeather(city: City): Promise<WeatherData> {
     latitude: String(city.latitude),
     longitude: String(city.longitude),
     current:
-      'temperature_2m,relative_humidity_2m,wind_speed_10m,surface_pressure,precipitation,weather_code',
+      'temperature_2m,weather_code,time,apparent_temperature,relative_humidity_2m,wind_speed_10m,precipitation,surface_pressure',
     daily:
-      'weather_code,temperature_2m_max,temperature_2m_min,precipitation_probability_max',
+      'weather_code,temperature_2m_min,temperature_2m_max,precipitation_probability_max,wind_speed_10m_max',
     forecast_days: '5',
     timezone: 'auto',
   });
@@ -127,13 +147,15 @@ export async function getWeather(city: City): Promise<WeatherData> {
   }
 
   const data = (await res.json()) as ForecastResponse;
-  if (!data.current || !data.daily) {
+  if (!data.timezone || !data.current || !data.daily) {
     throw new WeatherServiceError('Resposta de clima incompleta. Tente novamente.');
   }
 
   return {
     city,
+    timezone: data.timezone,
     current: mapCurrent(data.current),
     forecast: mapForecast(data.daily),
+    errors: {},
   };
 }

@@ -1,0 +1,72 @@
+import type { WeatherData } from '../types/weather';
+
+/** Dados estáticos para desenvolver e visualizar a UI sem chamadas à API. */
+export const mockWeatherData: WeatherData = {
+  city: {
+    id: 3448439,
+    name: 'São Paulo',
+    admin1: 'São Paulo',
+    country: 'Brasil',
+    latitude: -23.5505,
+    longitude: -46.6333,
+  },
+  timezone: 'America/Sao_Paulo',
+  current: {
+    observedAt: '2026-10-29T12:00',
+    temperatureC: 24,
+    weatherCode: 2,
+    apparentTemperatureC: 25,
+    humidityPercent: 65,
+    windKmh: 12,
+    precipitationMm: 0,
+    surfacePressureHpa: 1013,
+  },
+  forecast: [
+    {
+      status: 'available',
+      date: '2026-10-29',
+      weatherCode: 2,
+      minTemperatureC: 18,
+      maxTemperatureC: 26,
+      precipitationProbabilityPercent: 10,
+      maxWindKmh: 14,
+    },
+    {
+      status: 'available',
+      date: '2026-10-30',
+      weatherCode: 3,
+      minTemperatureC: 17,
+      maxTemperatureC: 25,
+      precipitationProbabilityPercent: 20,
+      maxWindKmh: 16,
+    },
+    {
+      status: 'available',
+      date: '2026-10-31',
+      weatherCode: 61,
+      minTemperatureC: 18,
+      maxTemperatureC: 23,
+      precipitationProbabilityPercent: 70,
+      maxWindKmh: 18,
+    },
+    {
+      status: 'available',
+      date: '2026-11-01',
+      weatherCode: 1,
+      minTemperatureC: 17,
+      maxTemperatureC: 25,
+      precipitationProbabilityPercent: 10,
+      maxWindKmh: 13,
+    },
+    {
+      status: 'available',
+      date: '2026-11-02',
+      weatherCode: 0,
+      minTemperatureC: 16,
+      maxTemperatureC: 27,
+      precipitationProbabilityPercent: null,
+      maxWindKmh: 11,
+    },
+  ],
+  errors: {},
+};

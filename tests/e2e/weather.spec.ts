@@ -1,4 +1,4 @@
-import { test, expect, type Page } from '@playwright/test';
+import { expect, type Page, test } from '@playwright/test';
 
 const geocoding = {
   results: [
@@ -14,9 +14,11 @@ const geocoding = {
 };
 
 const forecast = {
+  timezone: 'America/Los_Angeles',
   current: {
     time: '2026-06-16T12:00',
     temperature_2m: 0,
+    apparent_temperature: 0,
     relative_humidity_2m: 80,
     wind_speed_10m: 10,
     surface_pressure: 1015,
@@ -29,6 +31,7 @@ const forecast = {
     temperature_2m_max: [20, 19, 22, 24, 25],
     temperature_2m_min: [12, 11, 13, 14, 15],
     precipitation_probability_max: [20, 90, 70, 10, 0],
+    wind_speed_10m_max: [14, 16, 18, 12, 11],
   },
 };
 
@@ -73,4 +76,20 @@ test('viewport mobile renderiza o fluxo principal', async ({ page }) => {
   await page.getByLabel(/buscar cidade/i).fill('Seattle');
   await page.getByRole('button', { name: /buscar/i }).click();
   await expect(page.getByRole('heading', { name: 'Seattle' })).toBeVisible();
+});
+
+test('layout não cria overflow horizontal de 320px a desktop', async ({ page }) => {
+  await page.goto('/');
+
+  for (const width of [320, 375, 640, 768, 1024, 1280, 1920]) {
+    await page.setViewportSize({ width, height: 900 });
+    const dimensions = await page.evaluate(() => ({
+      viewport: document.documentElement.clientWidth,
+      content: document.documentElement.scrollWidth,
+    }));
+
+    expect(dimensions.content, `overflow em viewport de ${width}px`).toBeLessThanOrEqual(
+      dimensions.viewport,
+    );
+  }
 });

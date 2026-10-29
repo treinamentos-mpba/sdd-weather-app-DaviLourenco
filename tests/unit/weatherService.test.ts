@@ -1,5 +1,5 @@
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { searchCities, getWeather, WeatherServiceError } from '../../src/services/weatherService';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { getWeather, searchCities, WeatherServiceError } from '../../src/services/weatherService';
 import type { City } from '../../src/types/weather';
 
 const CITY: City = {
@@ -75,27 +75,36 @@ describe('weatherService', () => {
           current: {
             time: '2026-06-16T12:00',
             temperature_2m: 18,
+            apparent_temperature: 17,
             relative_humidity_2m: 80,
             wind_speed_10m: 10,
-            surface_pressure: 1015,
             precipitation: 0,
+            surface_pressure: 1015,
             weather_code: 3,
           },
+          timezone: 'America/Los_Angeles',
           daily: {
             time: ['2026-06-16', '2026-06-17', '2026-06-18', '2026-06-19', '2026-06-20'],
             weather_code: [3, 61, 80, 1, 0],
             temperature_2m_max: [20, 19, 22, 24, 25],
             temperature_2m_min: [12, 11, 13, 14, 15],
             precipitation_probability_max: [20, 90, 70, 10, null],
+            wind_speed_10m_max: [15, 20, 12, 18, 14],
           },
         }),
       );
 
       const data = await getWeather(CITY);
-      expect(data.current.temperature).toBe(18);
+      expect(data.current?.temperatureC).toBe(18);
+      expect(data.current?.apparentTemperatureC).toBe(17);
+      expect(data.current?.surfacePressureHpa).toBe(1015);
+      expect(data.timezone).toBe('America/Los_Angeles');
       expect(data.forecast).toHaveLength(5);
-      // precipitação nula vira 0 (resposta parcial)
-      expect(data.forecast[4].precipitationProbability).toBe(0);
+      expect(data.forecast[4].status).toBe('available');
+      if (data.forecast[4].status === 'available') {
+        expect(data.forecast[4].precipitationProbabilityPercent).toBeNull();
+        expect(data.forecast[4].maxWindKmh).toBe(14);
+      }
     });
 
     it('lança erro quando a resposta está incompleta', async () => {
