@@ -103,6 +103,35 @@ describe('weatherService', () => {
       });
     });
 
+    it('aborta a requisição após 10 segundos e libera o timer', async () => {
+      vi.useFakeTimers();
+      try {
+        const fetchSpy = vi.fn(
+          (_url: string, options?: RequestInit) =>
+            new Promise<Response>((_resolve, reject) => {
+              options?.signal?.addEventListener(
+                'abort',
+                () => reject(new DOMException('Aborted', 'AbortError')),
+                { once: true },
+              );
+            }),
+        );
+        vi.stubGlobal('fetch', fetchSpy);
+
+        const request = searchCities('Seattle');
+        const timeoutExpectation = expect(request).rejects.toMatchObject({
+          name: 'WeatherServiceError',
+          message: 'A requisição demorou demais.',
+        });
+        await vi.advanceTimersByTimeAsync(10_000);
+
+        await timeoutExpectation;
+        expect(vi.getTimerCount()).toBe(0);
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
     it('converte falhas de rede na mensagem definida', async () => {
       vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new Error('socket failure')));
 
@@ -177,12 +206,117 @@ describe('weatherService', () => {
       await expect(getWeather(CITY)).rejects.toBeInstanceOf(WeatherServiceError);
     });
 
+    it('lança WeatherServiceError quando o forecast retorna HTTP não-ok', async () => {
+      vi.stubGlobal('fetch', mockFetchOnce({}, false));
+
+      await expect(getWeather(CITY)).rejects.toBeInstanceOf(WeatherServiceError);
+    });
+
+    it('lança WeatherServiceError quando o JSON do forecast é inválido', async () => {
+      vi.stubGlobal(
+        'fetch',
+        vi.fn().mockResolvedValue({
+          ok: true,
+          json: async () => {
+            throw new SyntaxError('invalid JSON');
+          },
+        } as unknown as Response),
+      );
+
+      await expect(getWeather(CITY)).rejects.toBeInstanceOf(WeatherServiceError);
+    });
+
+    it('preserva null em campos complementares ausentes', async () => {
+      vi.stubGlobal(
+        'fetch',
+        mockFetchOnce({
+          timezone: 'America/Los_Angeles',
+          current: {
+            time: '2026-06-16T12:00',
+            temperature_2m: 18,
+            weather_code: 3,
+          },
+          daily: {
+            time: ['2026-06-16', '2026-06-17', '2026-06-18', '2026-06-19', '2026-06-20'],
+            weather_code: [3, 61, 80, 1, 0],
+            temperature_2m_max: [20, 19, 22, 24, 25],
+            temperature_2m_min: [12, 11, 13, 14, 15],
+          },
+        }),
+      );
+
+      const data = await getWeather(CITY);
+
+      expect(data.current?.apparentTemperatureC).toBeNull();
+      expect(data.current?.humidityPercent).toBeNull();
+      expect(data.current?.windKmh).toBeNull();
+      expect(data.current?.precipitationMm).toBeNull();
+      expect(data.current?.surfacePressureHpa).toBeNull();
+      expect(data.forecast).toHaveLength(5);
+      expect(data.forecast.every((day) => day.status === 'available')).toBe(true);
+      for (const day of data.forecast) {
+        if (day.status === 'available') {
+          expect(day.precipitationProbabilityPercent).toBeNull();
+          expect(day.maxWindKmh).toBeNull();
+        }
+      }
+    });
+
+    it('marca como indisponível o dia com arrays diários incompletos', async () => {
+      vi.stubGlobal(
+        'fetch',
+        mockFetchOnce({
+          timezone: 'America/Los_Angeles',
+          current: {
+            time: '2026-06-16T12:00',
+            temperature_2m: 18,
+            weather_code: 3,
+          },
+          daily: {
+            time: ['2026-06-16', '2026-06-17'],
+            weather_code: [3],
+            temperature_2m_max: [20, 19],
+            temperature_2m_min: [12, 11],
+          },
+        }),
+      );
+
+      const data = await getWeather(CITY);
+
+      expect(data.forecast).toEqual([
+        expect.objectContaining({ status: 'available', date: '2026-06-16' }),
+        { status: 'unavailable', date: '2026-06-17' },
+      ]);
+    });
+
     it('lança WeatherServiceError quando current está ausente', async () => {
       vi.stubGlobal(
         'fetch',
         mockFetchOnce({
           timezone: 'America/Los_Angeles',
           daily: { time: [] },
+        }),
+      );
+
+      await expect(getWeather(CITY)).rejects.toBeInstanceOf(WeatherServiceError);
+    });
+
+    it.each([
+      ['time', { temperature_2m: 18, weather_code: 3 }],
+      ['temperature_2m', { time: '2026-06-16T12:00', weather_code: 3 }],
+      ['weather_code', { time: '2026-06-16T12:00', temperature_2m: 18 }],
+    ])('lança WeatherServiceError quando current não contém %s', async (_field, current) => {
+      vi.stubGlobal(
+        'fetch',
+        mockFetchOnce({
+          timezone: 'America/Los_Angeles',
+          current,
+          daily: {
+            time: [],
+            weather_code: [],
+            temperature_2m_min: [],
+            temperature_2m_max: [],
+          },
         }),
       );
 

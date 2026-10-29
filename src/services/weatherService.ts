@@ -86,16 +86,48 @@ interface ForecastResponse {
   };
 }
 
+function isFiniteNumber(value: unknown): value is number {
+  return typeof value === 'number' && Number.isFinite(value);
+}
+
+function isValidCurrent(
+  current: ForecastResponse['current'],
+): current is NonNullable<ForecastResponse['current']> {
+  return Boolean(
+    current &&
+      typeof current.time === 'string' &&
+      isFiniteNumber(current.temperature_2m) &&
+      isFiniteNumber(current.weather_code),
+  );
+}
+
+function isValidDaily(
+  daily: ForecastResponse['daily'],
+): daily is NonNullable<ForecastResponse['daily']> {
+  return Boolean(
+    daily &&
+      Array.isArray(daily.time) &&
+      daily.time.every((date) => typeof date === 'string') &&
+      Array.isArray(daily.weather_code) &&
+      Array.isArray(daily.temperature_2m_min) &&
+      Array.isArray(daily.temperature_2m_max),
+  );
+}
+
+function optionalNumber(value: number | null | undefined): number | null {
+  return isFiniteNumber(value) ? value : null;
+}
+
 function mapCurrent(c: NonNullable<ForecastResponse['current']>): CurrentWeather {
   return {
     observedAt: c.time,
     temperatureC: c.temperature_2m,
     weatherCode: c.weather_code,
-    apparentTemperatureC: c.apparent_temperature ?? null,
-    humidityPercent: c.relative_humidity_2m ?? null,
-    windKmh: c.wind_speed_10m ?? null,
-    precipitationMm: c.precipitation ?? null,
-    surfacePressureHpa: c.surface_pressure ?? null,
+    apparentTemperatureC: optionalNumber(c.apparent_temperature),
+    humidityPercent: optionalNumber(c.relative_humidity_2m),
+    windKmh: optionalNumber(c.wind_speed_10m),
+    precipitationMm: optionalNumber(c.precipitation),
+    surfacePressureHpa: optionalNumber(c.surface_pressure),
   };
 }
 
@@ -106,9 +138,9 @@ function mapForecast(d: NonNullable<ForecastResponse['daily']>): ForecastDay[] {
     const minTemperatureC = d.temperature_2m_min[i];
 
     if (
-      weatherCode === undefined ||
-      maxTemperatureC === undefined ||
-      minTemperatureC === undefined
+      !isFiniteNumber(weatherCode) ||
+      !isFiniteNumber(maxTemperatureC) ||
+      !isFiniteNumber(minTemperatureC)
     ) {
       return { status: 'unavailable', date };
     }
@@ -119,8 +151,8 @@ function mapForecast(d: NonNullable<ForecastResponse['daily']>): ForecastDay[] {
       weatherCode,
       maxTemperatureC,
       minTemperatureC,
-      precipitationProbabilityPercent: d.precipitation_probability_max?.[i] ?? null,
-      maxWindKmh: d.wind_speed_10m_max?.[i] ?? null,
+      precipitationProbabilityPercent: optionalNumber(d.precipitation_probability_max?.[i]),
+      maxWindKmh: optionalNumber(d.wind_speed_10m_max?.[i]),
     };
   });
 }
@@ -146,8 +178,18 @@ export async function getWeather(city: City): Promise<WeatherData> {
     throw new WeatherServiceError('Não foi possível carregar o clima. Tente novamente.');
   }
 
-  const data = (await res.json()) as ForecastResponse;
-  if (!data.timezone || !data.current || !data.daily) {
+  let data: ForecastResponse;
+  try {
+    const body: unknown = await res.json();
+    if (typeof body !== 'object' || body === null) {
+      throw new WeatherServiceError('Resposta de clima incompleta. Tente novamente.');
+    }
+    data = body as ForecastResponse;
+  } catch {
+    throw new WeatherServiceError('Resposta de clima incompleta. Tente novamente.');
+  }
+
+  if (!data.timezone || !isValidCurrent(data.current) || !isValidDaily(data.daily)) {
     throw new WeatherServiceError('Resposta de clima incompleta. Tente novamente.');
   }
 
