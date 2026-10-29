@@ -166,7 +166,7 @@ export async function getWeather(city: City): Promise<WeatherData> {
     latitude: String(city.latitude),
     longitude: String(city.longitude),
     current:
-      'temperature_2m,weather_code,time,apparent_temperature,relative_humidity_2m,wind_speed_10m,precipitation,surface_pressure',
+      'temperature_2m,weather_code,apparent_temperature,relative_humidity_2m,wind_speed_10m,precipitation,surface_pressure',
     daily:
       'weather_code,temperature_2m_min,temperature_2m_max,precipitation_probability_max,wind_speed_10m_max',
     forecast_days: '5',

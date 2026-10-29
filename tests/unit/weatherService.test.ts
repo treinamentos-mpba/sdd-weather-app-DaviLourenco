@@ -187,7 +187,9 @@ describe('weatherService', () => {
       expect(requestUrl.searchParams.get('longitude')).toBe(String(CITY.longitude));
       expect(requestUrl.searchParams.get('forecast_days')).toBe('5');
       expect(requestUrl.searchParams.get('timezone')).toBe('auto');
-      expect(requestUrl.searchParams.get('current')).toContain('temperature_2m');
+      const currentVariables = requestUrl.searchParams.get('current')?.split(',');
+      expect(currentVariables).toContain('temperature_2m');
+      expect(currentVariables).not.toContain('time');
       expect(requestUrl.searchParams.get('daily')).toContain('temperature_2m_min');
       expect(data.current?.temperatureC).toBe(18);
       expect(data.current?.apparentTemperatureC).toBe(17);
