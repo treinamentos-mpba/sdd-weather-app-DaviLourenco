@@ -9,3 +9,4 @@ Você vai criar aqui, ao longo do treinamento:
 - `weather-app-spec.md` — especificação completa do produto (Module 02)
 
 > Não comece pelo código. Comece pela spec.
+.
