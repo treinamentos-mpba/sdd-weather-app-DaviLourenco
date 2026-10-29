@@ -26,12 +26,12 @@ const current: CurrentWeatherType = {
   surfacePressureHpa: 1015,
 };
 
-function Harness() {
+function Harness({ weather = current }: { weather?: CurrentWeatherType }) {
   const [unit, setUnit] = useState<Unit>('celsius');
   return (
     <>
       <UnitToggle unit={unit} onChange={setUnit} />
-      <CurrentWeather city={city} current={current} unit={unit} />
+      <CurrentWeather city={city} current={weather} unit={unit} />
     </>
   );
 }
@@ -48,6 +48,16 @@ describe('UnitToggle + CurrentWeather', () => {
     expect(
       screen.getByRole('status', { name: 'Temperatura atual: 32° Fahrenheit' }),
     ).toHaveTextContent('32°');
+  });
+
+  it('mantém a temperatura de origem ao alternar C → F → C', async () => {
+    render(<Harness weather={{ ...current, temperatureC: 20.4 }} />);
+
+    expect(screen.getByRole('status', { name: 'Temperatura atual: 20° Celsius' })).toBeVisible();
+    await userEvent.click(screen.getByRole('button', { name: '°F' }));
+    expect(screen.getByRole('status', { name: 'Temperatura atual: 69° Fahrenheit' })).toBeVisible();
+    await userEvent.click(screen.getByRole('button', { name: '°C' }));
+    expect(screen.getByRole('status', { name: 'Temperatura atual: 20° Celsius' })).toBeVisible();
   });
 
   it('expõe os botões com estado pressionado acessível', () => {

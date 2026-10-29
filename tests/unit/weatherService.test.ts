@@ -206,6 +206,27 @@ describe('weatherService', () => {
       await expect(getWeather(CITY)).rejects.toBeInstanceOf(WeatherServiceError);
     });
 
+    it('converte falha de rede do forecast em WeatherServiceError', async () => {
+      vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new Error('network unavailable')));
+
+      await expect(getWeather(CITY)).rejects.toMatchObject({
+        name: 'WeatherServiceError',
+        message: 'Falha de rede.',
+      });
+    });
+
+    it.each([429, 503])('não repete automaticamente forecast com HTTP %i', async (status) => {
+      const fetchSpy = vi.fn().mockResolvedValue({
+        ok: false,
+        status,
+        json: async () => ({}),
+      } as Response);
+      vi.stubGlobal('fetch', fetchSpy);
+
+      await expect(getWeather(CITY)).rejects.toBeInstanceOf(WeatherServiceError);
+      expect(fetchSpy).toHaveBeenCalledTimes(1);
+    });
+
     it('lança WeatherServiceError quando o forecast retorna HTTP não-ok', async () => {
       vi.stubGlobal('fetch', mockFetchOnce({}, false));
 
