@@ -55,7 +55,7 @@ interface City {
   id: number;
   name: string;
   admin1: string | null;
-  country: string;
+  country: string | null;
   latitude: number;
   longitude: number;
 }
@@ -84,6 +84,7 @@ type ForecastDay =
 
 interface WeatherData {
   city: City;
+  timezone: string;
   current: CurrentWeather | null;
   forecast: ForecastDay[];
   errors: {
@@ -137,58 +138,119 @@ writePreferences(preferences: Preferences): void;
 - **Campos usados:** `id`, `name`, `admin1`, `country`, `latitude`, `longitude`.
 - `results` ausente ou vazio representa zero resultados; resposta HTTP não-2xx, timeout ou JSON inválido representa erro, nunca busca vazia.
 
+Exemplo resumido de resposta:
+
+```json
+{
+  "results": [
+    {
+      "id": 123456,
+      "name": "Springfield",
+      "latitude": 39.78,
+      "longitude": -89.64,
+      "admin1": "Illinois",
+      "country": "United States"
+    }
+  ]
+}
+```
+
+Mapeamento: cada item de `results` vira um `City`: `id`, `name`, `admin1`, `country`, `latitude` e `longitude` são copiados; `admin1` e `country` ausentes viram `null`. A seleção do resultado fornece o `City` usado no pedido de forecast.
+
 ### Open-Meteo Forecast
 
 - **Método/endpoint:** `GET https://api.open-meteo.com/v1/forecast`.
 - **Coordenadas:** latitude/longitude do `City` explicitamente selecionado.
-- **Parâmetros base:** `timezone=auto`, `forecast_days=5`, `temperature_unit=celsius`, `wind_speed_unit=kmh`, `precipitation_unit=mm`.
-- **Campos atuais:** `temperature_2m`, `weather_code`, `time`, `apparent_temperature`, `relative_humidity_2m`, `wind_speed_10m`, `precipitation`.
-- **Campos diários:** `time`, `weather_code`, `temperature_2m_min`, `temperature_2m_max`, `precipitation_probability_max`, `wind_speed_10m_max`.
-- `time` diário é interpretado no fuso retornado pela API (`timezone=auto`); não converter para o fuso do dispositivo.
+- **Parâmetros comuns:** `latitude`, `longitude`, `timezone=auto`, `forecast_days=5`, `temperature_unit=celsius`, `wind_speed_unit=kmh`, `precipitation_unit=mm`.
+- **Parâmetro `current`:** `temperature_2m,weather_code,time,apparent_temperature,relative_humidity_2m,wind_speed_10m,precipitation`.
+- **Parâmetro `daily`:** `weather_code,temperature_2m_min,temperature_2m_max,precipitation_probability_max,wind_speed_10m_max`.
+- `time` diário é interpretado no fuso retornado pela API (`timezone=auto`); não converter para o fuso do dispositivo. `forecast_days=5` corresponde a hoje local e aos quatro dias seguintes.
 - Validar cobertura, limites e termos de uso da fonte antes do lançamento. Não assumir SLA do provider. Tratar HTTP 429 sem retry automático; oferecer retry manual.
+
+Exemplo resumido de resposta:
+
+```json
+{
+  "timezone": "America/Sao_Paulo",
+  "current": {
+    "time": "2026-03-10T12:00",
+    "temperature_2m": 20.0,
+    "weather_code": 0,
+    "apparent_temperature": 18.0,
+    "relative_humidity_2m": 55,
+    "wind_speed_10m": 14.0,
+    "precipitation": 0.0
+  },
+  "daily": {
+    "time": ["2026-03-10", "2026-03-11", "2026-03-12", "2026-03-13", "2026-03-14"],
+    "weather_code": [0, 2, 3, 61, 1],
+    "temperature_2m_min": [15.0, 16.0, 17.0, 16.0, 15.0],
+    "temperature_2m_max": [25.0, 26.0, 27.0, 24.0, 25.0],
+    "precipitation_probability_max": [0, 10, 20, 60, null],
+    "wind_speed_10m_max": [14.0, 16.0, 12.0, 20.0, 18.0]
+  }
+}
+```
+
+Mapeamento para o modelo de dados:
+
+- Resposta do endpoint → `WeatherData`: `city` é o resultado selecionado; `timezone` vem da resposta; `current` e `daily` são validados e mapeados independentemente.
+- `current.time` → `CurrentWeather.observedAt`; `temperature_2m` → `temperatureC`; `weather_code` → `weatherCode`; `apparent_temperature` → `apparentTemperatureC`; `relative_humidity_2m` → `humidityPercent`; `wind_speed_10m` → `windKmh`; `precipitation` → `precipitationMm`.
+- Para cada índice `i` de `daily.time`, criar um `ForecastDay`: `time[i]` → `date`; `weather_code[i]` → `weatherCode`; `temperature_2m_min[i]`/`temperature_2m_max[i]` → `minTemperatureC`/`maxTemperatureC`; `precipitation_probability_max[i]` → `precipitationProbabilityPercent`; `wind_speed_10m_max[i]` → `maxWindKmh`.
+- `null` e campos complementares ausentes permanecem `null`; não converter para zero. Campo essencial inválido invalida somente o bloco/dia correspondente, conforme `Error Handling`.
 
 ## State Management
 
-Manter estado na aplicação/hook, sem store global. O hook deve expor estado de busca e estado de meteorologia separadamente para que resultados de geocodificação não sejam confundidos com carregamento da previsão.
+Não introduzir store global. O estado remoto da tela vive no hook `useWeather`; a unidade selecionada vive no componente raiz `App` (ou em um hook de preferências usado por ele). O texto ainda não enviado pode permanecer como estado local de `SearchBar`; resultados, cidade selecionada e estados de requisição pertencem ao hook.
 
-Modelo de estado recomendado:
+Usar uma união compartilhada para os ciclos assíncronos:
 
-- `query`, `cities`, `selectedCity`;
-- `searchStatus` e `weatherStatus`;
-- `weatherData` com blocos atual/previsão independentes;
-- `searchError` e erros por bloco;
-- `unit`, carregada/salva via serviço local.
+```ts
+type RequestStatus = 'idle' | 'loading' | 'success' | 'error' | 'empty';
+```
 
-Usar `AbortController` ou contador de requisição para cancelamento/ordenação. O componente de apresentação não deve iniciar fetch nem interpretar DTO da Open-Meteo. Não introduzir cache de dados meteorológicos; cache local é somente para cidade e unidade.
+- `searchStatus`: `idle` antes da primeira busca; `loading` enquanto geocodifica; `empty` quando a busca válida retorna zero cidades; `success` quando há resultados; `error` para falha de rede, HTTP ou payload inválido.
+- `weatherStatus`: `idle` sem cidade selecionada; `loading` durante a consulta; `success` quando pelo menos um bloco meteorológico é válido; `error` quando current e forecast falham ou não contêm os campos essenciais. `empty` não é usado para falha meteorológica nem para campos ausentes.
+- Estado do hook: `cities`, `selectedCity`, `weatherData`, `searchError`, `currentError` e `forecastError`. Erros por bloco permitem apresentar clima atual mesmo quando a previsão falha, e vice-versa.
+- `unit`: estado da aplicação, inicializado a partir das preferências locais; se ausente ou ilegível, usar Celsius. Ao alternar, gravar a preferência local sem bloquear a interação se o storage falhar.
+- `SearchBar` mantém apenas o texto de edição e estados transitórios de foco; não duplica o status remoto nem faz chamadas de serviço.
+
+Unidades: `WeatherData` mantém temperaturas sempre em Celsius. Componentes recebem o valor original e `unit`; funções puras de `lib/temperature.ts` convertem e arredondam durante a renderização. A troca de unidade não chama `searchCities` nem `getWeather` e não altera cidade ou datas. A preferência de unidade pode ser persistida localmente; os dados meteorológicos nunca são armazenados para uso offline.
+
+Para cada busca/consulta, manter um `AbortController` e/ou identificador monotônico. Uma nova ação aborta a requisição anterior quando possível; respostas de requisições antigas são ignoradas mesmo se o cancelamento não impedir sua conclusão. A UI não interpreta DTO da Open-Meteo.
 
 ## Error Handling
 
-- Entrada inválida: validação inline; nenhuma chamada de rede.
-- Busca válida sem resultados: estado `empty` e mensagem `Nenhuma cidade encontrada`.
-- Erro de rede/HTTP: estado `error`, mensagem amigável apropriada à ação e retry manual.
-- Timeout: abortar cada requisição após 10 s e apresentar `A requisição demorou demais. Tente novamente.`
-- HTTP 429: reportar indisponibilidade/limite e não repetir automaticamente.
-- JSON inválido ou campos essenciais ausentes: classificar como `invalid-response`; não converter falha em lista vazia ou zeros.
-- Campo complementar ausente ou `null`: preservar dados restantes e renderizar `Indisponível`.
-- Condição desconhecida: renderizar `Condição desconhecida`, sem falhar o cartão.
-- Preferências locais inacessíveis: usar Celsius e continuar sem persistência.
-- Erros e estados devem ser acessíveis (mensagem anunciável, retry com nome claro); detalhes internos e payload bruto não são exibidos ao usuário.
+- **Rede:** falha de conexão mantém a ação em `error`, exibe `Falha de rede. Verifique sua conexão.` e oferece retry manual. Não tratar como zero resultados.
+- **HTTP/API:** respostas não-2xx geram erro com contexto da operação (busca ou clima). HTTP 429 informa limite temporário; 5xx informa indisponibilidade. Não fazer retry automático. A mensagem técnica/status fica em telemetria, não na UI.
+- **Timeout:** cada chamada é abortada após 10 segundos; sair de `loading`, mostrar `A requisição demorou demais. Tente novamente.` e oferecer retry manual. Cancelamento causado por uma nova busca não deve exibir erro para a pessoa usuária.
+- **JSON inválido/contrato alterado:** classificar como `invalid-response`; não converter para lista vazia ou valores zero. Registrar o erro técnico sem expor o payload bruto.
+- **Resposta parcial:** validar `current` e `daily` separadamente. Campo complementar ausente ou `null` vira `null` no domínio e `Indisponível` na apresentação. Ausência de campo essencial invalida somente o bloco/dia correspondente; se o outro bloco for válido, `weatherStatus` permanece `success` e seu erro fica associado ao bloco indisponível.
+- **Sem resultados:** somente busca válida concluída com `results` vazio produz `searchStatus: 'empty'` e `Nenhuma cidade encontrada`. `results` ausente em JSON malformado é `error`, não `empty`.
+- **Código meteorológico desconhecido:** apresentar `Condição desconhecida`; temperatura e demais valores válidos permanecem disponíveis.
+- **Storage local:** se leitura/gravação falhar, usar Celsius e manter busca/consulta funcionais. Não enviar preferências ao servidor.
+- **Concorrência:** ignorar resposta de busca/forecast que não corresponda ao identificador da última ação, prevenindo dados de cidade anterior na tela.
+- **Acessibilidade:** estados e mensagens de erro devem ser anunciáveis por leitor de tela; retry deve ter nome acessível e continuar operável por teclado.
 
 ## Testing Strategy
 
-- **Unitários (Vitest):** conversão/arredondamento C/F, formatação pt-BR/fuso local, mapeamento de códigos conhecidos/desconhecidos, validação de input e mapeamento/validação de payloads.
-- **Serviço (Vitest):** mock de `fetch`; verificar endpoints/parâmetros, coordenadas, unidades, limite de cinco resultados, caracteres acentuados, payload parcial, JSON inválido, HTTP 429/5xx, falha de rede e timeout com relógio falso.
-- **Preferências (Vitest):** ausência de valores, persistência de cidade/unidade e exceção de `localStorage`.
-- **Hook/componentes (Testing Library):** busca vazia, zero/um/múltiplos resultados, seleção explícita, loading, resposta obsoleta, dados atuais/previsão, toggle sem refetch, erro/retry e preferência restaurada.
-- **E2E (Playwright):** interceptar Open-Meteo com fixtures; validar fluxos principais, teclas, estados de erro e viewports de 320/375/768/1280/1920 px. Nunca depender da API externa em CI.
+- **Vitest — funções puras:** cobrir `°C → °F` e retorno, pontos conhecidos (`0`, `100`, `-40`), decimais/arredondamento, rótulos de unidade, formatação de datas pt-BR por fuso e códigos WMO conhecidos/desconhecidos. Testes não devem usar relógio ou rede reais.
+- **Vitest — services com `fetch` mockado:** verificar URL, parâmetros, coordenadas, unidades, limite de cinco resultados e codificação de caracteres; validar mapeamento de respostas válidas e parciais. Cobrir `results: []` como vazio, JSON inválido como erro, HTTP 429/5xx, falha de rede, abort/timeout de 10 s e não converter `null` em zero. Usar timers falsos no teste de timeout.
+- **Vitest — preferências:** cobrir primeira execução, gravação/leitura da última cidade e unidade, JSON local inválido e `localStorage` bloqueado/lançando exceção; nesse último caso, aplicação continua com Celsius.
+- **Testing Library — hooks/componentes:** renderizar e verificar `idle`, `loading`, `success`, `empty` e `error`; busca vazia, sem resultado, resultado único (seleção automática) e múltiplos (seleção explícita); dados completos/parciais, mensagem de erro e retry. Verificar que trocar unidade não chama `fetch` novamente, que storage restaura preferências e que uma resposta obsoleta não substitui a seleção atual. Preferir asserts por roles e nomes acessíveis.
+- **Playwright — E2E:** interceptar endpoints Open-Meteo com fixtures; cobrir a jornada de busca → seleção → clima atual/previsão → alternância C/F, restauração após reload, vazio e erro com retry. Validar navegação por teclado e layout nos viewports mobile de 320 e 375 px e desktop de 1280 px. Os testes de CI não chamam a API real.
+- **Limite dos mocks:** mocks confirmam contrato da aplicação, não disponibilidade, cobertura ou aderência atual do fornecedor. Validar isso separadamente em uma verificação de integração controlada antes do lançamento, sem tornar os testes de CI dependentes da rede externa.
 - **Gates:** `pnpm lint`, `pnpm build`, `pnpm test` e `pnpm test:e2e` antes da entrega da implementação.
 
 ## Risks & Trade-offs
 
-| Risco/Trade-off | Efeito | Mitigação/decisão |
+| Decisão | Alternativa considerada | Trade-off e justificativa |
 |---|---|---|
-| Dependência direta da Open-Meteo no navegador | Disponibilidade, limites e termos do provider afetam a experiência; sem backend, não há proxy/cache controlado pelo produto. | Validar termos/limites, monitorar provider e comunicar falhas; reavaliar backend apenas se houver necessidade comprovada. |
-| Campos exigidos não disponíveis para toda localização | Blocos atuais ou dias podem ficar indisponíveis. | Distinguir essenciais de complementares e validar payload antes de mapear; testar respostas parciais. |
-| Selecionar automaticamente cidade quando há apenas um resultado, mas exigir escolha com vários | Simplifica buscas inequívocas, preservando precisão em homônimos. | Cobrir ambos os caminhos em testes automatizados. |
-| Preferências em armazenamento local | Preferências somem quando os dados do navegador são apagados e não acompanham a pessoa entre dispositivos. | Aceitar o trade-off na v1; iniciar com Celsius e permitir busca manual sem storage. |
-| Critérios operacionais dependem de infraestrutura ainda não definida | SLO de disponibilidade exige monitoramento e hospedagem configurados. | Definir probes e responsáveis no plano de entrega antes de declarar o SLO atendido. |
+| Chamar Open-Meteo diretamente do navegador, sem chave | Backend/BFF como proxy | Menos infraestrutura e nenhum segredo a proteger; em contrapartida, há dependência direta de disponibilidade, CORS e limites do provider, sem cache/proxy controlado. Reavaliar apenas se limites ou requisitos operacionais exigirem. |
+| Hooks React locais para estado | Redux/Zustand ou cache de servidor | Menos dependências e cerimônia para uma única tela; exige cuidar explicitamente de estados, cancelamento e respostas obsoletas. |
+| `fetch` nativo | Axios ou cliente HTTP dedicado | Evita dependência e já oferece `AbortController`; a aplicação mantém tratamento de status, JSON e erros no service. |
+| Persistir cidade/unidade no armazenamento local | Conta e persistência no servidor | Funciona sem autenticação e reduz dados armazenados; preferências podem ser apagadas, compartilhadas no dispositivo e não sincronizam entre navegadores. |
+| Guardar temperaturas em Celsius e converter na renderização | Solicitar novamente à API ao trocar unidade ou armazenar valores em unidades mistas | Troca imediata sem rede e evita divergência entre blocos; conversão e arredondamento precisam ser testados, mantendo Celsius como única origem. |
+| Vitest/Playwright com respostas simuladas | E2E sempre contra API real | Fixtures dão testes determinísticos, rápidos e sem quota/rede externa; não validam o fornecedor real, que exige verificação de integração separada antes do lançamento. |
+| Sem retry automático; retry manual | Backoff/retry automático | Evita rajadas e comportamento surpresa perante limite 429; a pessoa precisa acionar novamente após falhas temporárias. |
+| Sem cache meteorológico offline | Cache local com idade máxima | Evita apresentar previsão velha como atual e simplifica a consistência; consultas dependem de conectividade disponível. |
